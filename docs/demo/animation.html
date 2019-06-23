@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+
+<head>
+  <title>AxElevation Demo - Axiom Design System</title>
+  <style>
+    body {
+      --a: 200px;
+    }
+
+    ax-elevation {
+      --elevation-depth: 1;
+      top: 50%;
+      left: 50%;
+      width: var(--a);
+      height: var(--a);
+      margin-top: calc(-0.5 * var(--a));
+      margin-left: calc(-0.5 * var(--a));
+      position: absolute;
+      display: block;
+    }
+
+    img {
+      margin: 40px;
+    }
+
+    ax-elevation.animation {
+      animation: elevate 1s ease-in-out infinite;
+      animation-direction: alternate;
+      animation-timing-function: ease-in;
+    }
+
+    @keyframes elevate {
+      0% {
+        --elevation-depth: 1;
+      }
+
+      100% {
+        --elevation-depth: 128;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <ax-elevation>
+    <img src='./images/lemon.svg' />
+  </ax-elevation>
+
+  <!-- <script src="../../build/main.js"></script>
+  <script>AxElevation.register()</script> -->
+  <script type="module">
+    import { register } from 'https://unpkg.com/@ax-design/elevation/es/index.js';
+    register();
+  </script>
+  <script>
+    let interval;
+
+    document.addEventListener('pointerup', () => {
+      document.querySelector('ax-elevation').classList.toggle('animation');
+    });
+  </script>
+</body>
