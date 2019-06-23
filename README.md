@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  Web component that implements elevation texture of Axiom Design System.
+  Web component that implements Elevation shadow effect of Axiom Design System.
 </p>
 
 <p align="center">
