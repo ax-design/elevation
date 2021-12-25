@@ -23,7 +23,7 @@
       width: 100%;
     }
 
-    ax-elevation {
+    ax-elevation:not(.unset) {
       top: 50%;
       left: 50%;
       width: var(--a);
@@ -36,6 +36,10 @@
 
     .dp4 {
       --elevation-depth: 4;
+    }
+
+    .dp64 {
+      --elevation-depth: 64;
     }
 
     .dp128 {
@@ -88,10 +92,25 @@
     </div>
   </section>
 
-  <!-- <script src="../../build/main.js"></script>
-  <script>AxElevation.register()</script> -->
+  <section class="demo-block">
+    <div class="demo">
+      <div class="ax-elevation-container">
+        <ax-elevation class="unset dp64">
+          <p>Intrinsic sizing</p>
+        </ax-elevation>
+      </div>
+    </div>
+    </div>
+
+    <div class="code">
+      <h2>Intrinsic sizing</h2>
+    </div>
+  </section>
+
+  <script src="../../build/main.js"></script>
   <script type="module">
     import { register } from 'https://unpkg.com/@ax-design/elevation/es/index.js';
-    register();
+    if (typeof AxElevation === 'object') AxElevation.register()
+    else register();
   </script>
 </body>
