@@ -1,4 +1,7 @@
 import { AxElevation } from './CustomElements.js';
+/// <reference path="./cssExtendedProps.d.ts" />
+/// <reference path="./cssTypedOM.d.ts" />
+
 export function register() {
     customElements.define(AxElevation.ElementName, AxElevation);
 
