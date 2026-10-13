@@ -45,6 +45,14 @@
     .dp128 {
       --elevation-depth: 128;
     }
+
+    .star {
+      --elevation-depth: 32;
+      --ax-radius: 50%;
+      --ax-corner-shape: scoop;
+      --ax-corner-shoulder-radius: 8px;
+      background: transparent;
+    }
   </style>
 </head>
 
@@ -104,6 +112,25 @@
 
     <div class="code">
       <h2>Intrinsic sizing</h2>
+    </div>
+  </section>
+
+  <section class="demo-block">
+    <div class="demo">
+      <div class="ax-elevation-container">
+        <ax-elevation class="star"></ax-elevation>
+      </div>
+    </div>
+
+    <div class="code">
+      <h2>Any shape</h2>
+      <p>The shadow follows the shape properties of Surface:</p>
+      <pre>.my-shadow{
+  --elevation-depth: 32;
+  --ax-radius: 50%;
+  --ax-corner-shape: scoop;
+  --ax-corner-shoulder-radius: 8px;
+}</pre>
     </div>
   </section>
 

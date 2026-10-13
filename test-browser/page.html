@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>elevation browser test</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  ax-elevation, ax-surface { position: absolute; width: 100px; height: 60px; }
+  #e { left: 60px; top: 40px; --elevation-depth: 16; }
+  .parent { --elevation-depth: 8; }
+  #inherit { left: 260px; top: 40px; }
+  #star { left: 60px; top: 220px; width: 120px; height: 120px; --elevation-depth: 12; --ax-radius: 50%; --ax-corner-shape: scoop; --ax-corner-shoulder-radius: 6px; }
+  #grow { left: 300px; top: 220px; --elevation-depth: 2; transition: --elevation-depth 400ms linear; }
+  #grow.up { --elevation-depth: 24; }
+  #zero { left: 460px; top: 40px; }
+</style></head>
+<body>
+<ax-elevation id="e"><span id="content">Elevation</span></ax-elevation>
+<div class="parent"><ax-elevation id="inherit"></ax-elevation></div>
+<ax-surface id="star" layers="elevation"></ax-surface>
+<ax-elevation id="grow"></ax-elevation>
+<ax-elevation id="zero"></ax-elevation>
+<script type="module" src="./page.ts"></script>
+</body></html>
