@@ -30,6 +30,8 @@ export function elevationShadows(depth: number): ElevationShadow[] {
 export function createElevationLayer(): SurfaceLayer {
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
+    // The key of the inputs of the last drawn frame; identical inputs skip the redraw.
+    let painted = '';
     return {
         schema: ELEVATION_SCHEMA,
         static: true,
@@ -60,9 +62,18 @@ export function createElevationLayer(): SurfaceLayer {
         write(frame: SurfaceFrame) {
             if (!canvas || !ctx || (!frame.changed.style && !frame.changed.size)) return false;
             const { paint, values } = frame;
+            const depth = values.number('--elevation-depth');
             const ratio = window.devicePixelRatio || 1;
             const width = Math.ceil(paint.width * ratio);
             const height = Math.ceil(paint.height * ratio);
+            // The shadow only depends on the depth, the shape and the size. Any other style
+            // change — a press and its release fire one without touching them — leaves the
+            // canvas as is: a redraw that draws the same thing is not free, in Firefox it
+            // turns the backdrop of an acrylic layer above clear for a frame or two.
+            const b = frame.shape.bounds;
+            const key = `${depth}|${b.left.toFixed(2)} ${b.top.toFixed(2)} ${b.right.toFixed(2)} ${b.bottom.toFixed(2)}|${frame.borderWidths.join(',')}|${width}x${height}`;
+            if (key === painted) return false;
+            painted = key;
             if (canvas.width !== width || canvas.height !== height) {
                 canvas.width = width;
                 canvas.height = height;
@@ -70,7 +81,6 @@ export function createElevationLayer(): SurfaceLayer {
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 ctx.clearRect(0, 0, width, height);
             }
-            const depth = values.number('--elevation-depth');
             if (!(depth > 0)) return false;
             ctx.setTransform(ratio, 0, 0, ratio, -paint.left * ratio, -paint.top * ratio);
             ctx.fillStyle = '#000';
