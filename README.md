@@ -93,6 +93,7 @@ Put `elevation` first, so the other layers paint on top of it. The shadow is cut
 * Elevation runs on Surface. The shadow follows any shape, not only rectangles.
 * It works in browsers without `CSS.registerProperty`.
 * The shadow is drawn with canvas shadows instead of `box-shadow`, with the same two layers and the same blur.
+* 0.1.1: The shadow is redrawn only when its inputs change, not on every press and release. In Firefox, a redraw through a press turned acrylic above it clear for a frame or two.
 
 ## Development
 
