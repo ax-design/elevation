@@ -28,7 +28,10 @@ interface Driver {
 
 async function playwright(name: string, url: string): Promise<Driver> {
     const pw = (await import('playwright')) as any;
-    const browser = await pw[name].launch();
+    // On a host without the FHS layout (NixOS) the bundled browser cannot resolve its libraries:
+    // AX_BROWSER_PATH points the run at a system build instead.
+    const executablePath = process.env.AX_BROWSER_PATH;
+    const browser = await pw[name].launch(executablePath ? { executablePath } : {});
     const page = await browser.newPage({ viewport: { width: 700, height: 900 } });
     await page.goto(url);
     return {
