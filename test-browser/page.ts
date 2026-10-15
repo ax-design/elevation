@@ -25,9 +25,12 @@ const canvasOf = (el: AxSurface) => el.shadowRoot!.querySelector('.layer-elevati
 // Alpha of the shadow canvas at a point in the element's own coordinates.
 const alpha = (el: AxSurface, x: number, y: number) => {
     const canvas = canvasOf(el)!;
-    const p = el.debugState.paint;
-    const ratio = canvas.width / p.width;
-    return canvas.getContext('2d')!.getImageData(Math.round((x - p.left) * ratio), Math.round((y - p.top) * ratio), 1, 1).data[3];
+    const s = el.debugState;
+    const ratio = window.devicePixelRatio || 1;
+    // The canvas is anchored dev device pixels beyond the layout box, symmetric, and the
+    // shape's local coordinates are the host coordinates.
+    const dev = (canvas.width - Math.round(s.width * ratio)) / 2;
+    return canvas.getContext('2d')!.getImageData(Math.round(x * ratio + dev), Math.round(y * ratio + dev), 1, 1).data[3];
 };
 // The paint box the two shadows of a depth need: 1.5 blur around, moved by the offset.
 const expectedPaint = (depth: number, w: number, h: number) => {

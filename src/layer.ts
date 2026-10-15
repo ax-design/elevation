@@ -50,7 +50,7 @@ export function createElevationLayer(): SurfaceLayer {
         attach(container) {
             canvas = document.createElement('canvas');
             canvas.setAttribute('aria-hidden', 'true');
-            canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;';
+            canvas.style.cssText = 'position:absolute;pointer-events:none;';
             ctx = canvas.getContext('2d');
             container.appendChild(canvas);
         },
@@ -64,40 +64,69 @@ export function createElevationLayer(): SurfaceLayer {
             const { paint, values } = frame;
             const depth = values.number('--elevation-depth');
             const ratio = window.devicePixelRatio || 1;
-            const width = Math.ceil(paint.width * ratio);
-            const height = Math.ceil(paint.height * ratio);
             // The shadow only depends on the depth, the shape and the size. Any other style
             // change — a press and its release fire one without touching them — leaves the
             // canvas as is: a redraw that draws the same thing is not free, in Firefox it
             // turns the backdrop of an acrylic layer above clear for a frame or two.
             const b = frame.shape.bounds;
-            const key = `${depth}|${b.left.toFixed(2)} ${b.top.toFixed(2)} ${b.right.toFixed(2)} ${b.bottom.toFixed(2)}|${frame.borderWidths.join(',')}|${width}x${height}`;
+            // The canvas is anchored a whole number of device pixels beyond the layout box,
+            // growing in 64-pixel steps: its device position, size and drawing offset stay
+            // constant while the paint box follows the depth, so the compositor never
+            // re-snaps it against the element, at any device pixel ratio.
+            const side = Math.max(0, -paint.left, -paint.top, paint.left + paint.width - frame.width, paint.top + paint.height - frame.height);
+            const dev = Math.ceil((side * ratio) / 64) * 64;
+            const key = `${depth}|${b.left.toFixed(2)} ${b.top.toFixed(2)} ${b.right.toFixed(2)} ${b.bottom.toFixed(2)}|${frame.borderWidths.join(',')}|${dev}`;
             if (key === painted) return false;
             painted = key;
-            if (canvas.width !== width || canvas.height !== height) {
+            // The bitmap maps 1:1 onto the device pixels at any ratio.
+            const width = Math.round(frame.width * ratio) + 2 * dev;
+            const height = Math.round(frame.height * ratio) + 2 * dev;
+            // Container at paint.left plus this offset plus the in-bitmap dev offset is
+            // the host origin: the canvas sits at one constant host position while the
+            // paint box moves.
+            const left = `${-paint.left - dev / ratio}px`;
+            if (canvas.style.left !== left) canvas.style.left = left;
+            const top = `${-paint.top - dev / ratio}px`;
+            if (canvas.style.top !== top) canvas.style.top = top;
+            // Grow the bitmap only: a resize reallocates the backing store, and the shadow
+            // spreads a pixel at a time during the animation.
+            if (canvas.width < width || canvas.height < height) {
                 canvas.width = width;
                 canvas.height = height;
-            } else {
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, width, height);
             }
+            const cssWidth = canvas.width / ratio + 'px';
+            if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
+            const cssHeight = canvas.height / ratio + 'px';
+            if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (!(depth > 0)) return false;
-            ctx.setTransform(ratio, 0, 0, ratio, -paint.left * ratio, -paint.top * ratio);
+            // The offset is a whole number of bitmap pixels and constant between anchor
+            // steps: every frame rasterizes the same way and differs from the last only
+            // where the shadow really grew.
+            ctx.setTransform(ratio, 0, 0, ratio, dev, dev);
             ctx.fillStyle = '#000';
             ctx.beginPath();
             traceContour(ctx, frame.shape.outline);
             // Shadow offsets and blur are in device pixels, unaffected by the transform.
             for (const s of elevationShadows(depth)) {
                 ctx.shadowColor = `rgba(0, 0, 0, ${Math.max(0, Math.min(1, s.alpha))})`;
-                ctx.shadowBlur = s.blur * ratio;
+                // Offsets land on whole bitmap pixels either way (engines round them);
+                // rounding here keeps the steps even while the depth animates.
+                ctx.shadowBlur = Math.round(s.blur * ratio);
                 ctx.shadowOffsetX = 0;
-                ctx.shadowOffsetY = s.y * ratio;
+                ctx.shadowOffsetY = Math.round(s.y * ratio);
                 ctx.fill();
             }
-            // Cut the shape (and the shadows under it) out.
+            // Cut the shape (and the shadows under it) out, a bitmap pixel wide beyond the
+            // outline: the snapped drawing origin moves against the element by up to half a
+            // bitmap pixel, and without the overlap the contact line shows a hairline.
             ctx.shadowColor = 'rgba(0, 0, 0, 0)';
             ctx.globalCompositeOperation = 'destination-out';
             ctx.fill();
+            ctx.lineWidth = 2 / ratio;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
             ctx.globalCompositeOperation = 'source-over';
             return false;
         },
