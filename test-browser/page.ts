@@ -46,6 +46,31 @@ const expectedPaint = (depth: number, w: number, h: number) => {
     bottom = Math.ceil(bottom);
     return { left: -side, top: -top, width: w + 2 * side, height: h + top + bottom };
 };
+// The elevation layer remembers what it last painted and skips the redraw when nothing it depends
+// on moved. A skipped redraw is invisible from the bitmap alone, so the shape checks watch the
+// layer itself: every repaint begins by clearing its canvas, which counts the draws.
+let repaints = 0;
+const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+CanvasRenderingContext2D.prototype.clearRect = function (this: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    if (this.canvas.parentElement?.classList.contains('layer-elevation')) repaints++;
+    return clearRect.call(this, x, y, w, h);
+};
+// FNV-1a over the elevation canvas pixels: any change to the painted shadow changes it.
+const bitmapHash = (el: AxSurface) => {
+    const canvas = canvasOf(el)!;
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < data.length; i++) {
+        h ^= data[i];
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16);
+};
+// The resolved shape's bounding box, as a comparable string.
+const boundsOf = (el: AxSurface) => {
+    const b = el.debugState.shape?.bounds;
+    return b ? [b.left, b.top, b.right, b.bottom].join(',') : 'none';
+};
 
 async function run() {
     register();
@@ -106,6 +131,43 @@ async function run() {
     // headless WebKit ticks a few times over the whole transition. Ask for at least three
     // intermediate steps, scaled down to what the frame budget allowed.
     check('a depth transition redraws in between', seen.has(24) && between >= Math.min(3, ticks - 2), `${steps.join(' ')} in ${ticks} frames`);
+
+    // 6. Changing the shape repaints the shadow. The docs page's Shape example moves the radius
+    //    and the corner shape of a card, and the shadow has to follow. Cutting a notch inside a
+    //    24px radius leaves the bounding box exactly where it was, so a memo that remembers the
+    //    shape by its bounds alone keeps the old silhouette on the canvas.
+    e.style.setProperty('--ax-radius', '24px');
+    await frames(3);
+    const roundHash = bitmapHash(e);
+    const roundBounds = boundsOf(e);
+    const shapeRepaints = repaints;
+    e.style.setProperty('--ax-corner-shape', 'notch');
+    await frames(3);
+    const notchHash = bitmapHash(e);
+    check(
+        'a shape change with unchanged bounds repaints the shadow',
+        notchHash !== roundHash && boundsOf(e) === roundBounds && repaints > shapeRepaints,
+        `bounds ${roundBounds} -> ${boundsOf(e)}, hash ${roundHash} -> ${notchHash}, repaints ${repaints - shapeRepaints}`
+    );
+    // And back to round: same bounds again, and the shadow has to come back.
+    e.style.setProperty('--ax-corner-shape', 'round');
+    await frames(3);
+    check(
+        'changing the corner shape back repaints the shadow again',
+        bitmapHash(e) !== notchHash && repaints - shapeRepaints >= 2,
+        `repaints ${repaints - shapeRepaints}`
+    );
+
+    // 7. A style change the shadow does not depend on must not redraw. A redundant redraw is not
+    //    free (Firefox clears an acrylic layer's backdrop for a frame or two), which is exactly
+    //    why the layer remembers what it painted.
+    const idleRepaints = repaints;
+    e.style.setProperty('--ax-tilt-mode', 'relative');
+    await frames(3);
+    check('an unrelated style change does not redraw the shadow', repaints === idleRepaints, `repaints ${repaints - idleRepaints}`);
+    e.style.removeProperty('--ax-tilt-mode');
+    e.style.removeProperty('--ax-corner-shape');
+    e.style.removeProperty('--ax-radius');
 
     return { userAgent: navigator.userAgent, checks };
 }

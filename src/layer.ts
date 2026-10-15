@@ -4,6 +4,7 @@
 // they follow any surface shape. Like box-shadow, the shadow is cut out under the shape, so a
 // translucent layer on top does not darken. Drawn only when the style or the size changes.
 import { traceContour } from '@ax-design/shape';
+import type { Contour } from '@ax-design/shape';
 import type { SurfaceFrame, SurfaceLayer, Values } from '@ax-design/surface';
 import type { PropertySpec } from '@ax-design/typed-om';
 
@@ -27,11 +28,43 @@ export function elevationShadows(depth: number): ElevationShadow[] {
     ];
 }
 
+// Whether two contours would paint the same shadow. The surface resolves a fresh shape on every
+// style change, so most frames land here with a different object holding the same path: the walk
+// settles it, and it stops at the first segment that differs.
+function sameContour(a: Contour, b: Contour | null): boolean {
+    if (a === b) return true;
+    if (!b) return false;
+    const x = a.segments;
+    const y = b.segments;
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) {
+        const p = x[i];
+        const q = y[i];
+        if (p.type === 'line') {
+            if (q.type !== 'line' || p.x0 !== q.x0 || p.y0 !== q.y0 || p.x1 !== q.x1 || p.y1 !== q.y1 || p.side !== q.side) return false;
+        } else if (q.type === 'arc') {
+            if (p.cx !== q.cx || p.cy !== q.cy || p.r !== q.r || p.start !== q.start || p.end !== q.end || p.side !== q.side || p.sideEnd !== q.sideEnd || p.anticlockwise !== q.anticlockwise) return false;
+        } else return false;
+    }
+    return true;
+}
+
 export function createElevationLayer(): SurfaceLayer {
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
-    // The key of the inputs of the last drawn frame; identical inputs skip the redraw.
-    let painted = '';
+    // What the bitmap on screen was painted from; a frame that matches it skips the redraw. The
+    // shadow follows the contour itself, not its bounding box: a 24px round corner and a 24px
+    // notch share a box and cast different shadows, so the contour has to be part of the state.
+    // Kept as numbers and walked as fields rather than as a key string, because this runs on
+    // every frame of a resize or a depth transition and a string would allocate one per frame.
+    let paintedDepth = NaN;
+    let paintedRatio = NaN;
+    let paintedDev = NaN;
+    let paintedBorderTop = NaN;
+    let paintedBorderRight = NaN;
+    let paintedBorderBottom = NaN;
+    let paintedBorderLeft = NaN;
+    let paintedOutline: Contour | null = null;
     return {
         schema: ELEVATION_SCHEMA,
         static: true,
@@ -68,16 +101,36 @@ export function createElevationLayer(): SurfaceLayer {
             // change — a press and its release fire one without touching them — leaves the
             // canvas as is: a redraw that draws the same thing is not free, in Firefox it
             // turns the backdrop of an acrylic layer above clear for a frame or two.
-            const b = frame.shape.bounds;
             // The canvas is anchored a whole number of device pixels beyond the layout box,
             // growing in 64-pixel steps: its device position, size and drawing offset stay
             // constant while the paint box follows the depth, so the compositor never
             // re-snaps it against the element, at any device pixel ratio.
             const side = Math.max(0, -paint.left, -paint.top, paint.left + paint.width - frame.width, paint.top + paint.height - frame.height);
             const dev = Math.ceil((side * ratio) / 64) * 64;
-            const key = `${depth}|${b.left.toFixed(2)} ${b.top.toFixed(2)} ${b.right.toFixed(2)} ${b.bottom.toFixed(2)}|${frame.borderWidths.join(',')}|${dev}`;
-            if (key === painted) return false;
-            painted = key;
+            const widths = frame.borderWidths;
+            const outline = frame.shape.outline;
+            // The scalars first: they settle a press, a resize or a depth step without walking
+            // the path, and only a frame that matches all of them has to compare the contour.
+            if (
+                depth === paintedDepth &&
+                ratio === paintedRatio &&
+                dev === paintedDev &&
+                widths[0] === paintedBorderTop &&
+                widths[1] === paintedBorderRight &&
+                widths[2] === paintedBorderBottom &&
+                widths[3] === paintedBorderLeft &&
+                sameContour(outline, paintedOutline)
+            ) {
+                return false;
+            }
+            paintedDepth = depth;
+            paintedRatio = ratio;
+            paintedDev = dev;
+            paintedBorderTop = widths[0];
+            paintedBorderRight = widths[1];
+            paintedBorderBottom = widths[2];
+            paintedBorderLeft = widths[3];
+            paintedOutline = outline;
             // The bitmap maps 1:1 onto the device pixels at any ratio.
             const width = Math.round(frame.width * ratio) + 2 * dev;
             const height = Math.round(frame.height * ratio) + 2 * dev;
