@@ -90,9 +90,12 @@ async function run() {
     grow.classList.add('up');
     const seen = new Set<number>();
     const start = performance.now();
-    while (performance.now() - start < 550) {
+    // A slow headless engine can take seconds to tick the first frames; wait for the
+    // transition to land (bounded) instead of sampling a fixed window of wall time.
+    for (;;) {
         await frames(1);
         seen.add(Math.round(grow.debugState.values!.number('--elevation-depth')));
+        if (seen.has(24) || performance.now() - start > 5000) break;
     }
     const between = [...seen].filter((d) => d > 3 && d < 23).length;
     check('a depth transition redraws in between', between >= 3 && seen.has(24), [...seen].join(' '));
