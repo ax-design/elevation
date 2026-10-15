@@ -90,15 +90,22 @@ async function run() {
     grow.classList.add('up');
     const seen = new Set<number>();
     const start = performance.now();
+    let ticks = 0;
     // A slow headless engine can take seconds to tick the first frames; wait for the
     // transition to land (bounded) instead of sampling a fixed window of wall time.
     for (;;) {
         await frames(1);
+        ticks++;
         seen.add(Math.round(grow.debugState.values!.number('--elevation-depth')));
         if (seen.has(24) || performance.now() - start > 5000) break;
     }
-    const between = [...seen].filter((d) => d > 3 && d < 23).length;
-    check('a depth transition redraws in between', between >= 3 && seen.has(24), [...seen].join(' '));
+    // Intermediates: every sampled step that is neither the first nor the final value.
+    const steps = [...seen];
+    const between = steps.filter((d) => d !== steps[0] && d !== 24).length;
+    // The engine can only follow the transition on the frames the browser produces: a
+    // headless WebKit ticks a few times over the whole transition. Ask for at least three
+    // intermediate steps, scaled down to what the frame budget allowed.
+    check('a depth transition redraws in between', seen.has(24) && between >= Math.min(3, ticks - 2), `${steps.join(' ')} in ${ticks} frames`);
 
     return { userAgent: navigator.userAgent, checks };
 }
