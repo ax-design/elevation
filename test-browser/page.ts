@@ -1,4 +1,5 @@
 // Browser checks for <ax-elevation> and the elevation layer on the surface engine.
+import { setAlwaysUseFallback } from '@ax-design/surface';
 import type { AxSurface } from '@ax-design/surface';
 import { elevationShadows, register } from '../src/index.js';
 
@@ -187,6 +188,21 @@ async function run() {
         await media('forced-off');
         check('the shadow comes back after forced colors', getComputedStyle(canvasOf(e)!).display !== 'none' && bitmapHash(e) === before && alpha(e, 50, 66) > 8, `hash ${before} -> ${bitmapHash(e)}`);
     }
+
+    // 9. setAlwaysUseFallback(true) is the page asking for the fallback, as ThemeShadow does on
+    //    Windows (battery saver, slow hardware): the canvas hides, and shows the same bitmap again
+    //    when the page turns it off. Off again before any later check.
+    const fallbackBefore = bitmapHash(e);
+    setAlwaysUseFallback(true);
+    await frames(3);
+    check('setAlwaysUseFallback(true) hides the shadow canvas', getComputedStyle(canvasOf(e)!).display === 'none', getComputedStyle(canvasOf(e)!).display);
+    setAlwaysUseFallback(false);
+    await frames(3);
+    check(
+        'setAlwaysUseFallback(false) shows the shadow again with the same bitmap',
+        getComputedStyle(canvasOf(e)!).display !== 'none' && bitmapHash(e) === fallbackBefore,
+        `hash ${fallbackBefore} -> ${bitmapHash(e)}, display ${getComputedStyle(canvasOf(e)!).display}`
+    );
 
     return { userAgent: navigator.userAgent, checks };
 }

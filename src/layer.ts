@@ -3,8 +3,11 @@
 // box-shadow, which only follows rounded rectangles; this layer draws them with canvas shadows so
 // they follow any surface shape. Like box-shadow, the shadow is cut out under the shape, so a
 // translucent layer on top does not darken. Drawn only when the style or the size changes.
+// The shadow follows WinUI's ThemeShadow policy: no shadow in High Contrast, with transparency
+// effects off, or when the page asks for the fallback. box-shadow did the same in forced colors.
 import { traceContour } from '@ax-design/shape';
 import type { Contour } from '@ax-design/shape';
+import { useFallback } from '@ax-design/surface';
 import type { SurfaceFrame, SurfaceLayer, Values } from '@ax-design/surface';
 import type { PropertySpec } from '@ax-design/typed-om';
 
@@ -52,13 +55,6 @@ function sameContour(a: Contour, b: Contour | null): boolean {
 export function createElevationLayer(): SurfaceLayer {
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
-    // Forced colors removes box-shadow, so the original showed no shadow there; the canvas hides
-    // to match. The surface writes a layer only when its style or size changes, not when the media
-    // changes, so the layer follows the query itself.
-    let forced: MediaQueryList | null = null;
-    const syncForced = () => {
-        if (canvas) canvas.style.display = forced && forced.matches ? 'none' : '';
-    };
     // What the bitmap on screen was painted from; a frame that matches it skips the redraw. The
     // shadow follows the contour itself, not its bounding box: a 24px round corner and a 24px
     // notch share a box and cast different shadows, so the contour has to be part of the state.
@@ -92,27 +88,23 @@ export function createElevationLayer(): SurfaceLayer {
             canvas.setAttribute('aria-hidden', 'true');
             canvas.style.cssText = 'position:absolute;pointer-events:none;';
             ctx = canvas.getContext('2d');
-            if (typeof matchMedia === 'function') {
-                forced = matchMedia('(forced-colors: active)');
-                // addEventListener on MediaQueryList is Safari 14+; addListener is older.
-                if (forced.addEventListener) forced.addEventListener('change', syncForced);
-                else if (forced.addListener) forced.addListener(syncForced);
-                syncForced();
-            }
             container.appendChild(canvas);
         },
         detach() {
-            if (forced) {
-                if (forced.removeEventListener) forced.removeEventListener('change', syncForced);
-                else if (forced.removeListener) forced.removeListener(syncForced);
-                forced = null;
-            }
             if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
             canvas = null;
             ctx = null;
         },
         write(frame: SurfaceFrame) {
-            if (!canvas || !ctx || (!frame.changed.style && !frame.changed.size)) return false;
+            if (!canvas || !ctx) return false;
+            // The shadow hides when the effects fall back, and comes back on the first frame that
+            // says so. Hidden with display: none, the canvas keeps its bitmap and the state below,
+            // so showing it again needs no redraw. A frame from an older engine has no appearance:
+            // it draws the shadow.
+            const hidden = !!frame.appearance && useFallback(frame.appearance);
+            const display = hidden ? 'none' : '';
+            if (canvas.style.display !== display) canvas.style.display = display;
+            if (!frame.changed.style && !frame.changed.size) return false;
             const { paint, values } = frame;
             const depth = values.number('--elevation-depth');
             const ratio = window.devicePixelRatio || 1;
