@@ -52,6 +52,13 @@ function sameContour(a: Contour, b: Contour | null): boolean {
 export function createElevationLayer(): SurfaceLayer {
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
+    // Forced colors removes box-shadow, so the original showed no shadow there; the canvas hides
+    // to match. The surface writes a layer only when its style or size changes, not when the media
+    // changes, so the layer follows the query itself.
+    let forced: MediaQueryList | null = null;
+    const syncForced = () => {
+        if (canvas) canvas.style.display = forced && forced.matches ? 'none' : '';
+    };
     // What the bitmap on screen was painted from; a frame that matches it skips the redraw. The
     // shadow follows the contour itself, not its bounding box: a 24px round corner and a 24px
     // notch share a box and cast different shadows, so the contour has to be part of the state.
@@ -85,9 +92,21 @@ export function createElevationLayer(): SurfaceLayer {
             canvas.setAttribute('aria-hidden', 'true');
             canvas.style.cssText = 'position:absolute;pointer-events:none;';
             ctx = canvas.getContext('2d');
+            if (typeof matchMedia === 'function') {
+                forced = matchMedia('(forced-colors: active)');
+                // addEventListener on MediaQueryList is Safari 14+; addListener is older.
+                if (forced.addEventListener) forced.addEventListener('change', syncForced);
+                else if (forced.addListener) forced.addListener(syncForced);
+                syncForced();
+            }
             container.appendChild(canvas);
         },
         detach() {
+            if (forced) {
+                if (forced.removeEventListener) forced.removeEventListener('change', syncForced);
+                else if (forced.removeListener) forced.removeListener(syncForced);
+                forced = null;
+            }
             if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
             canvas = null;
             ctx = null;

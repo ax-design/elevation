@@ -23,6 +23,8 @@ interface Driver {
     move(x: number, y: number): Promise<void>;
     down(): Promise<void>;
     up(): Promise<void>;
+    // Emulates forced colors. Drivers without it leave the page's check out.
+    forcedColors?(on: boolean): Promise<void>;
     close(): Promise<void>;
 }
 
@@ -39,6 +41,7 @@ async function playwright(name: string, url: string): Promise<Driver> {
         move: (x, y) => page.mouse.move(x, y),
         down: () => page.mouse.down(),
         up: () => page.mouse.up(),
+        forcedColors: (on) => page.emulateMedia({ forcedColors: on ? 'active' : 'none' }),
         close: () => browser.close(),
     };
 }
@@ -83,6 +86,8 @@ async function drive(d: Driver) {
                 await d.down();
             } else if (state.step === 'release') {
                 await d.up();
+            } else if (state.step === 'forced-on' || state.step === 'forced-off') {
+                if (d.forcedColors) await d.forcedColors(state.step === 'forced-on');
             }
             await d.eval(`(window.__ack = ${JSON.stringify(state.step)})`);
         }

@@ -10,6 +10,9 @@ interface Check {
 declare global {
     interface Window {
         __result?: unknown;
+        // The driver's step handshake: the page asks for a step, the driver acks it.
+        __step?: string;
+        __ack?: string;
     }
 }
 
@@ -168,6 +171,22 @@ async function run() {
     e.style.removeProperty('--ax-tilt-mode');
     e.style.removeProperty('--ax-corner-shape');
     e.style.removeProperty('--ax-radius');
+
+    // 8. Forced colors removes box-shadow, so the layer hides its canvas, and shows the same bitmap
+    //    again when forced colors ends. The driver emulates the media; a driver without it skips this.
+    const media = async (step: string) => {
+        window.__step = step;
+        while (window.__ack !== step) await frames(1);
+        await frames(3);
+    };
+    await frames(3);
+    const before = bitmapHash(e);
+    await media('forced-on');
+    if (matchMedia('(forced-colors: active)').matches) {
+        check('forced colors hides the shadow canvas', getComputedStyle(canvasOf(e)!).display === 'none', getComputedStyle(canvasOf(e)!).display);
+        await media('forced-off');
+        check('the shadow comes back after forced colors', getComputedStyle(canvasOf(e)!).display !== 'none' && bitmapHash(e) === before && alpha(e, 50, 66) > 8, `hash ${before} -> ${bitmapHash(e)}`);
+    }
 
     return { userAgent: navigator.userAgent, checks };
 }
