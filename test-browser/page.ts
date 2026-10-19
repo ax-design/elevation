@@ -70,6 +70,47 @@ const bitmapHash = (el: AxSurface) => {
     }
     return h.toString(16);
 };
+// A CSS length in px; an unset one counts as 0, so a missing offset fails a check rather than throwing.
+const px = (s: string) => parseFloat(s) || 0;
+// The bitmap pixels under a box in the element's own coordinates. The canvas sits at its style
+// offsets within the paint box, and its bitmap is scaled to its CSS size.
+const bitmapRect = (el: AxSurface, box: { left: number; top: number; width: number; height: number }) => {
+    const canvas = canvasOf(el)!;
+    const sx = canvas.width / px(canvas.style.width);
+    const sy = canvas.height / px(canvas.style.height);
+    const ox = el.debugState.paint.left + px(canvas.style.left);
+    const oy = el.debugState.paint.top + px(canvas.style.top);
+    return {
+        x: Math.round((box.left - ox) * sx),
+        y: Math.round((box.top - oy) * sy),
+        w: Math.round(box.width * sx),
+        h: Math.round(box.height * sy),
+    };
+};
+// FNV-1a over the pixels under a box, so a flat and a grown bitmap compare where they overlap.
+const regionHash = (el: AxSurface, box: { left: number; top: number; width: number; height: number }) => {
+    const canvas = canvasOf(el)!;
+    const r = bitmapRect(el, box);
+    const data = canvas.getContext('2d')!.getImageData(r.x, r.y, r.w, r.h).data;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < data.length; i++) {
+        h ^= data[i];
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16);
+};
+// Bitmap pixels with any alpha left of an x in the element's coordinates.
+const inkLeftOf = (el: AxSurface, x: number) => {
+    const canvas = canvasOf(el)!;
+    const sx = canvas.width / px(canvas.style.width);
+    const ox = el.debugState.paint.left + px(canvas.style.left);
+    const cols = Math.max(0, Math.min(canvas.width, Math.ceil((x - ox) * sx)));
+    if (!cols) return 0;
+    const data = canvas.getContext('2d')!.getImageData(0, 0, cols, canvas.height).data;
+    let n = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
+    return n;
+};
 // The resolved shape's bounding box, as a comparable string.
 const boundsOf = (el: AxSurface) => {
     const b = el.debugState.shape?.bounds;
@@ -203,6 +244,86 @@ async function run() {
         getComputedStyle(canvasOf(e)!).display !== 'none' && bitmapHash(e) === fallbackBefore,
         `hash ${fallbackBefore} -> ${bitmapHash(e)}, display ${getComputedStyle(canvasOf(e)!).display}`
     );
+
+    // 10. A motion fades the shadow with its opacity, on the canvas itself. A 3D motion keeps the
+    //     shape flat in Firefox: the layer draws the projected shadow, and its canvas grows with the
+    //     paint box. Elsewhere the container carries the 3D transform and the canvas draws as usual.
+    const m = byId('m');
+    await frames(3);
+    const flat = { ...m.debugState.paint };
+    check('the motion element starts flat at its own paint box', JSON.stringify(flat) === JSON.stringify(expectedPaint(16, 100, 60)), JSON.stringify(flat));
+    // One box for every state: the projected shadow reaches past the flat paint box.
+    const wide = { left: -200, top: -100, width: 400, height: 300 };
+    const flatHash = regionHash(m, wide);
+    const container = canvasOf(m)!.parentElement!;
+    const motionFrames = async (state: Parameters<AxSurface['motion']>[0]) => {
+        m.motion(state);
+        await frames(3);
+    };
+
+    await motionFrames({ opacity: 0.4 });
+    check('motion opacity fades the canvas', getComputedStyle(canvasOf(m)!).opacity === '0.4', getComputedStyle(canvasOf(m)!).opacity);
+    check('motion opacity leaves the host opaque', getComputedStyle(m).opacity === '1', getComputedStyle(m).opacity);
+    m.motion(null);
+    await frames(3);
+    check('motion(null) restores the canvas opacity', getComputedStyle(canvasOf(m)!).opacity === '1', getComputedStyle(canvasOf(m)!).opacity);
+    check('motion(null) restores the flat bitmap', regionHash(m, wide) === flatHash && JSON.stringify(m.debugState.paint) === JSON.stringify(flat));
+
+    if (/Firefox\//.test(navigator.userAgent)) {
+        await motionFrames({ rotateY: 30, originX: -150, originY: 30 });
+        const projected = { ...m.debugState.paint };
+        check('firefox projects a 3D motion: the container stays flat', m.debugState.homography !== null && getComputedStyle(container).transform === 'none', getComputedStyle(container).transform);
+        check('the projected paint box grows past the flat one', projected.left < flat.left && projected.width > flat.width, `${JSON.stringify(projected)} vs ${JSON.stringify(flat)}`);
+        // Where the canvas really is on screen: the container is flat, so its rect is exact. The
+        // canvas is anchored dev device pixels beyond the layout box, dev in 64-pixel steps, and
+        // covers the paint box.
+        const cv = canvasOf(m)!;
+        const host = m.getBoundingClientRect();
+        const rect = cv.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        const side = Math.max(0, -projected.left, -projected.top, projected.left + projected.width - m.debugState.width, projected.top + projected.height - m.debugState.height);
+        const anchor = -(Math.ceil((side * ratio) / 64) * 64) / ratio;
+        const x = rect.left - host.left;
+        const y = rect.top - host.top;
+        check(
+            'the canvas is anchored beside the layout box and covers the projected paint box',
+            Math.abs(x - anchor) < 0.01 && Math.abs(y - anchor) < 0.01 && x <= projected.left && x + rect.width >= projected.left + projected.width && y <= projected.top && y + rect.height >= projected.top + projected.height,
+            `canvas at ${x},${y} ${rect.width}x${rect.height}, anchor ${anchor}, box ${JSON.stringify(projected)}`
+        );
+        const ink = inkLeftOf(m, flat.left);
+        check('the projected shadow falls left of the flat box', ink > 0, `ink pixels ${ink}`);
+        const projectedHash = regionHash(m, wide);
+        check('the projected bitmap differs from the flat one', projectedHash !== flatHash, `${projectedHash} vs ${flatHash}`);
+        // A style change the shadow does not depend on, while projected, must not redraw it.
+        const idle = repaints;
+        m.style.setProperty('--ax-tilt-mode', 'relative');
+        await frames(3);
+        m.style.removeProperty('--ax-tilt-mode');
+        await frames(3);
+        check('an unrelated style change does not redraw a projected shadow', repaints === idle, `repaints ${repaints - idle}`);
+        await motionFrames({ rotateY: 20, originX: -150, originY: 30 });
+        const redrawn = regionHash(m, wide);
+        check('a new projection redraws the shadow', redrawn !== projectedHash, `repaints ${repaints - idle}`);
+        await motionFrames({ rotateY: 30, originX: -150, originY: 30 });
+        check('the projected shadow comes back with the same bitmap', regionHash(m, wide) === projectedHash);
+        // A projection change that keeps the paint box still repaints the shadow.
+        const box = JSON.stringify(m.debugState.paint);
+        await motionFrames({ rotateY: 30.1, originX: -150, originY: 30 });
+        check(
+            'a projection change inside the paint box redraws the shadow',
+            JSON.stringify(m.debugState.paint) === box && regionHash(m, wide) !== projectedHash,
+            `box ${box} -> ${JSON.stringify(m.debugState.paint)}`
+        );
+    } else {
+        await motionFrames({ rotateY: 30, originX: -150, originY: 30 });
+        check('chromium keeps the shape drawn flat under a 3D transform', m.debugState.homography !== null && m.debugState.paint.left === flat.left, JSON.stringify(m.debugState.paint));
+        check('chromium carries the 3D motion on the container', getComputedStyle(container).transform !== 'none', getComputedStyle(container).transform);
+        check('chromium draws the flat shadow under the motion', regionHash(m, wide) === flatHash);
+    }
+    m.motion(null);
+    await frames(3);
+    check('motion(null) restores the flat transform', getComputedStyle(container).transform === 'none');
+    check('motion(null) restores the flat shadow', regionHash(m, wide) === flatHash && JSON.stringify(m.debugState.paint) === JSON.stringify(flat), JSON.stringify(m.debugState.paint));
 
     return { userAgent: navigator.userAgent, checks };
 }
