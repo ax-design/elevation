@@ -2,11 +2,13 @@
 // <ax-elevation>: two black shadows that grow with --elevation-depth. The original drew them with
 // box-shadow, which only follows rounded rectangles; this layer draws them with canvas shadows so
 // they follow any surface shape. Like box-shadow, the shadow is cut out under the shape, so a
-// translucent layer on top does not darken. Drawn only when the style or the size changes.
+// translucent layer on top does not darken. Drawn only when the style, the size or the projection
+// of a motion changes. A motion fades the shadow with its opacity, on the canvas itself; in Firefox
+// it is drawn through the projected outline, as the container is flat meanwhile.
 // The shadow follows WinUI's ThemeShadow policy: no shadow in High Contrast, with transparency
 // effects off, or when the page asks for the fallback. box-shadow did the same in forced colors.
-import { traceContour } from '@ax-design/shape';
-import type { Contour } from '@ax-design/shape';
+import { projectContour, traceContour } from '@ax-design/shape';
+import type { Contour, Homography, Point } from '@ax-design/shape';
 import { useFallback } from '@ax-design/surface';
 import type { SurfaceFrame, SurfaceLayer, Values } from '@ax-design/surface';
 import type { PropertySpec } from '@ax-design/typed-om';
@@ -52,6 +54,23 @@ function sameContour(a: Contour, b: Contour | null): boolean {
     return true;
 }
 
+// Whether two projections are the same matrix, for the redraw cache: a motion changes it on every
+// frame.
+function sameTilt(a: Homography | null, b: Homography | null): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    for (let i = 0; i < 9; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
+// A closed polyline on the canvas path.
+function tracePolyline(ctx: CanvasRenderingContext2D, points: Point[]): void {
+    if (!points.length) return;
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+}
+
 export function createElevationLayer(): SurfaceLayer {
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
@@ -68,6 +87,10 @@ export function createElevationLayer(): SurfaceLayer {
     let paintedBorderBottom = NaN;
     let paintedBorderLeft = NaN;
     let paintedOutline: Contour | null = null;
+    // The projection the shadow was drawn through, null when it was drawn flat. The projection
+    // changes on every frame of a motion, so a motion repaints; a frame that leaves it as it was
+    // does not.
+    let paintedTilt: Homography | null = null;
     return {
         schema: ELEVATION_SCHEMA,
         static: true,
@@ -104,12 +127,19 @@ export function createElevationLayer(): SurfaceLayer {
             const hidden = !!frame.appearance && useFallback(frame.appearance);
             const display = hidden ? 'none' : '';
             if (canvas.style.display !== display) canvas.style.display = display;
-            if (!frame.changed.style && !frame.changed.size) return false;
+            // The motion's opacity, on the canvas itself: an ancestor would become the backdrop root
+            // of acrylic. Missing from an older engine, it is 1.
+            const opacity = typeof frame.opacity === 'number' ? String(frame.opacity) : '1';
+            if (canvas.style.opacity !== opacity) canvas.style.opacity = opacity;
+            const { changed } = frame;
+            // A tilt or a motion can move a projected shadow; the other tilts are carried by the
+            // containers. The redraw cache below tells whether the shadow really changed.
+            if (!changed.style && !changed.size && !changed.tilt && !changed.motion) return false;
             const { paint, values } = frame;
             const depth = values.number('--elevation-depth');
             const ratio = window.devicePixelRatio || 1;
-            // The shadow only depends on the depth, the shape and the size. Any other style
-            // change — a press and its release fire one without touching them — leaves the
+            // The shadow only depends on the depth, the shape, the size and the projection. Any other
+            // style change — a press and its release fire one without touching them — leaves the
             // canvas as is: a redraw that draws the same thing is not free, in Firefox it
             // turns the backdrop of an acrylic layer above clear for a frame or two.
             // The canvas is anchored a whole number of device pixels beyond the layout box,
@@ -120,9 +150,36 @@ export function createElevationLayer(): SurfaceLayer {
             const dev = Math.ceil((side * ratio) / 64) * 64;
             const widths = frame.borderWidths;
             const outline = frame.shape.outline;
+            // Drawn through the projection when the surface projects its motion (Firefox): the
+            // container is flat then, and the paint box holds the projected shape.
+            const tilt = frame.projected && frame.tilt ? frame.tilt : null;
+            // The bitmap maps 1:1 onto the device pixels at any ratio. Its size and position follow
+            // the paint box, which grows with a projected motion, whether or not the shadow has to be
+            // drawn again.
+            const width = Math.round(frame.width * ratio) + 2 * dev;
+            const height = Math.round(frame.height * ratio) + 2 * dev;
+            // Container at paint.left plus this offset plus the in-bitmap dev offset is
+            // the host origin: the canvas sits at one constant host position while the
+            // paint box moves.
+            const left = `${-paint.left - dev / ratio}px`;
+            if (canvas.style.left !== left) canvas.style.left = left;
+            const top = `${-paint.top - dev / ratio}px`;
+            if (canvas.style.top !== top) canvas.style.top = top;
+            // Grow the bitmap only: a resize reallocates the backing store, and the shadow
+            // spreads a pixel at a time during the animation. Growing clears the bitmap.
+            const grown = canvas.width < width || canvas.height < height;
+            if (grown) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+            const cssWidth = canvas.width / ratio + 'px';
+            if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
+            const cssHeight = canvas.height / ratio + 'px';
+            if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
             // The scalars first: they settle a press, a resize or a depth step without walking
             // the path, and only a frame that matches all of them has to compare the contour.
             if (
+                !grown &&
                 depth === paintedDepth &&
                 ratio === paintedRatio &&
                 dev === paintedDev &&
@@ -130,6 +187,7 @@ export function createElevationLayer(): SurfaceLayer {
                 widths[1] === paintedBorderRight &&
                 widths[2] === paintedBorderBottom &&
                 widths[3] === paintedBorderLeft &&
+                sameTilt(tilt, paintedTilt) &&
                 sameContour(outline, paintedOutline)
             ) {
                 return false;
@@ -142,26 +200,7 @@ export function createElevationLayer(): SurfaceLayer {
             paintedBorderBottom = widths[2];
             paintedBorderLeft = widths[3];
             paintedOutline = outline;
-            // The bitmap maps 1:1 onto the device pixels at any ratio.
-            const width = Math.round(frame.width * ratio) + 2 * dev;
-            const height = Math.round(frame.height * ratio) + 2 * dev;
-            // Container at paint.left plus this offset plus the in-bitmap dev offset is
-            // the host origin: the canvas sits at one constant host position while the
-            // paint box moves.
-            const left = `${-paint.left - dev / ratio}px`;
-            if (canvas.style.left !== left) canvas.style.left = left;
-            const top = `${-paint.top - dev / ratio}px`;
-            if (canvas.style.top !== top) canvas.style.top = top;
-            // Grow the bitmap only: a resize reallocates the backing store, and the shadow
-            // spreads a pixel at a time during the animation.
-            if (canvas.width < width || canvas.height < height) {
-                canvas.width = width;
-                canvas.height = height;
-            }
-            const cssWidth = canvas.width / ratio + 'px';
-            if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
-            const cssHeight = canvas.height / ratio + 'px';
-            if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
+            paintedTilt = tilt ? (tilt.slice() as Homography) : null;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (!(depth > 0)) return false;
@@ -171,7 +210,8 @@ export function createElevationLayer(): SurfaceLayer {
             ctx.setTransform(ratio, 0, 0, ratio, dev, dev);
             ctx.fillStyle = '#000';
             ctx.beginPath();
-            traceContour(ctx, frame.shape.outline);
+            if (tilt) tracePolyline(ctx, projectContour(outline, tilt, 0.1 / ratio));
+            else traceContour(ctx, outline);
             // Shadow offsets and blur are in device pixels, unaffected by the transform.
             for (const s of elevationShadows(depth)) {
                 ctx.shadowColor = `rgba(0, 0, 0, ${Math.max(0, Math.min(1, s.alpha))})`;

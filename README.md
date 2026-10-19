@@ -86,7 +86,7 @@ register();
 <ax-surface layers="elevation fill reveal">...</ax-surface>
 ```
 
-Put `elevation` first, so the other layers paint on top of it. The shadow is cut out under the shape, so a translucent layer like `acrylic` does not darken.
+Put `elevation` first, so the other layers paint on top of it. The shadow is cut out under the shape, so a translucent layer like `acrylic` does not darken. It fades with the `opacity` of `motion()`, and in Firefox during a 3D motion it follows the projected outline of the surface.
 
 ## Changes in 0.1
 
