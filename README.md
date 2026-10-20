@@ -95,6 +95,11 @@ Put `elevation` first, so the other layers paint on top of it. The shadow is cut
 * The shadow is drawn with canvas shadows instead of `box-shadow`, with the same two layers and the same blur.
 * 0.1.1: The shadow is redrawn only when its inputs change, not on every press and release. In Firefox, a redraw through a press turned acrylic above it clear for a frame or two.
 
+## Changes in 0.2
+
+* Built on Surface 0.3. The shadow fades with `motion()`, and in Firefox it follows the projected outline of a surface during a 3D motion.
+* The shadow is dropped whenever the effects fall back, forced colors included, like ThemeShadow on Windows.
+
 ## Development
 
 ```bash
