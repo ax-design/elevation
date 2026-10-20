@@ -99,6 +99,7 @@ Put `elevation` first, so the other layers paint on top of it. The shadow is cut
 
 * Built on Surface 0.3. The shadow fades with `motion()`, and in Firefox it follows the projected outline of a surface during a 3D motion.
 * The shadow is dropped whenever the effects fall back, forced colors included, like ThemeShadow on Windows.
+* 0.2.1: Built on Surface 0.3.3, which maps a pointer through a scaled or zoomed ancestor.
 
 ## Development
 
