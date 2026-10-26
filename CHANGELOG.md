@@ -2,6 +2,10 @@
 
 All notable changes to this package are documented in this file.
 
+## 0.2.3
+
+- Depends on @ax-design/surface 0.4 and typed-om 0.3 (no duplicate copies next to packages that use them).
+
 ## 0.2.2
 
 - `--elevation-color` (`<color>`, default black) sets the colour of the shadow; the alpha of the two shadows is multiplied by the colour's alpha, so the default is unchanged.
