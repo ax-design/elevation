@@ -59,6 +59,14 @@ Wrap the content that should float above the page in an `ax-elevation` component
 
 **Description:** How high the element floats. The shadow is two layers that grow with the depth: a large, soft one and a small, darker one under the element. `0` draws no shadow. Like the original, the property is inherited. The shadow follows WinUI's ThemeShadow: it is hidden in forced colors mode (Windows High Contrast), as `box-shadow` was, and when transparency effects are off (`prefers-reduced-transparency: reduce`). A page can also hide it with `setAlwaysUseFallback(true)` from `@ax-design/surface`, as Windows does on battery saver or slow hardware.
 
+### --elevation-color
+
+**Type:** `<color>`
+
+**Default:** `rgb(0, 0, 0)`
+
+**Description:** The colour of the shadow. The alpha of each of the two shadows is multiplied by the colour's own alpha, so the default is the original black shadow, and a translucent colour makes a lighter one. Like the depth, the property is inherited.
+
 ## With Surface
 
 Elevation runs on [Surface](https://github.com/ax-design/surface). The shadow follows the shape of the element, so the shape properties of Surface apply to `ax-elevation` too:

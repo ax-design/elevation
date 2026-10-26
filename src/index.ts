@@ -10,7 +10,10 @@ export type { ElevationShadow } from './layer.js';
 
 // The original definition. It is a permanent contract: older copies of this package may have
 // registered it first, and the first registration wins.
-const PROPERTY = { name: '--elevation-depth', syntax: '<number>', initialValue: '0', inherits: true };
+const PROPERTIES = [
+    { name: '--elevation-depth', syntax: '<number>', initialValue: '0', inherits: true },
+    { name: '--elevation-color', syntax: '<color>', initialValue: 'rgb(0, 0, 0)', inherits: true },
+];
 
 let propertyRegistered = false;
 function registerProperty(): void {
@@ -18,10 +21,12 @@ function registerProperty(): void {
     propertyRegistered = true;
     const css = typeof CSS !== 'undefined' ? (CSS as unknown as { registerProperty?: (d: unknown) => void }) : null;
     if (!css || !css.registerProperty) return;
-    try {
-        css.registerProperty(PROPERTY);
-    } catch (error) {
-        if (!error || (error as Error).name !== 'InvalidModificationError') throw error;
+    for (const property of PROPERTIES) {
+        try {
+            css.registerProperty(property);
+        } catch (error) {
+            if (!error || (error as Error).name !== 'InvalidModificationError') throw error;
+        }
     }
 }
 

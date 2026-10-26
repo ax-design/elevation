@@ -14,7 +14,12 @@ import type { SurfaceFrame, SurfaceLayer, Values } from '@ax-design/surface';
 import type { PropertySpec } from '@ax-design/typed-om';
 
 // Read through the surface engine. register() registers it with its original definition.
-export const ELEVATION_SCHEMA: PropertySpec[] = [{ name: '--elevation-depth', syntax: { type: 'number' }, initial: '0', inherits: true }];
+// `--elevation-color` is the colour of the shadow (default black); the alpha of each of the two
+// shadows is multiplied by the colour's own alpha, so black at full alpha is the original look.
+export const ELEVATION_SCHEMA: PropertySpec[] = [
+    { name: '--elevation-depth', syntax: { type: 'number' }, initial: '0', inherits: true },
+    { name: '--elevation-color', syntax: { type: 'color' }, initial: 'rgb(0, 0, 0)', inherits: true },
+];
 
 export interface ElevationShadow {
     // Offset down, in px.
@@ -80,6 +85,7 @@ export function createElevationLayer(): SurfaceLayer {
     // Kept as numbers and walked as fields rather than as a key string, because this runs on
     // every frame of a resize or a depth transition and a string would allocate one per frame.
     let paintedDepth = NaN;
+    let paintedColor = '';
     let paintedRatio = NaN;
     let paintedDev = NaN;
     let paintedBorderTop = NaN;
@@ -137,6 +143,9 @@ export function createElevationLayer(): SurfaceLayer {
             if (!changed.style && !changed.size && !changed.tilt && !changed.motion) return false;
             const { paint, values } = frame;
             const depth = values.number('--elevation-depth');
+            const [red, green, blue, strength] = values.color('--elevation-color');
+            const tint = `${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)}`;
+            const key = `${tint}, ${strength}`;
             const ratio = window.devicePixelRatio || 1;
             // The shadow only depends on the depth, the shape, the size and the projection. Any other
             // style change — a press and its release fire one without touching them — leaves the
@@ -181,6 +190,7 @@ export function createElevationLayer(): SurfaceLayer {
             if (
                 !grown &&
                 depth === paintedDepth &&
+                key === paintedColor &&
                 ratio === paintedRatio &&
                 dev === paintedDev &&
                 widths[0] === paintedBorderTop &&
@@ -193,6 +203,7 @@ export function createElevationLayer(): SurfaceLayer {
                 return false;
             }
             paintedDepth = depth;
+            paintedColor = key;
             paintedRatio = ratio;
             paintedDev = dev;
             paintedBorderTop = widths[0];
@@ -214,7 +225,7 @@ export function createElevationLayer(): SurfaceLayer {
             else traceContour(ctx, outline);
             // Shadow offsets and blur are in device pixels, unaffected by the transform.
             for (const s of elevationShadows(depth)) {
-                ctx.shadowColor = `rgba(0, 0, 0, ${Math.max(0, Math.min(1, s.alpha))})`;
+                ctx.shadowColor = `rgba(${tint}, ${Math.max(0, Math.min(1, s.alpha * strength))})`;
                 // Offsets land on whole bitmap pixels either way (engines round them);
                 // rounding here keeps the steps even while the depth animates.
                 ctx.shadowBlur = Math.round(s.blur * ratio);

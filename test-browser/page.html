@@ -10,6 +10,7 @@
   #grow { left: 300px; top: 220px; --elevation-depth: 2; transition: --elevation-depth 400ms linear; }
   #grow.up { --elevation-depth: 24; }
   #zero { left: 460px; top: 40px; }
+  #tint { left: 260px; top: 400px; --elevation-depth: 16; --elevation-color: rgb(255, 0, 255); }
   #m { left: 460px; top: 400px; --elevation-depth: 16; }
 </style></head>
 <body>
@@ -18,6 +19,7 @@
 <ax-surface id="star" layers="elevation"></ax-surface>
 <ax-elevation id="grow"></ax-elevation>
 <ax-elevation id="zero"></ax-elevation>
+<ax-elevation id="tint"></ax-elevation>
 <ax-elevation id="m"></ax-elevation>
 <script type="module" src="./page.ts"></script>
 </body></html>

@@ -2,6 +2,10 @@
 
 All notable changes to this package are documented in this file.
 
+## 0.2.2
+
+- `--elevation-color` (`<color>`, default black) sets the colour of the shadow; the alpha of the two shadows is multiplied by the colour's alpha, so the default is unchanged.
+
 ## 0.2.1
 
 - Built on Surface 0.3.3, which maps a pointer through a scaled or zoomed ancestor.

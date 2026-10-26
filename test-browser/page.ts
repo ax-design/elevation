@@ -210,6 +210,29 @@ async function run() {
     e.style.setProperty('--ax-tilt-mode', 'relative');
     await frames(3);
     check('an unrelated style change does not redraw the shadow', repaints === idleRepaints, `repaints ${repaints - idleRepaints}`);
+    // 7b. --elevation-color tints the shadow, and its alpha scales it; black is the original.
+    const tint = byId('tint');
+    const rgb = (el: AxSurface, x: number, y: number) => {
+        const canvas = canvasOf(el)!;
+        const s = el.debugState;
+        const ratio = window.devicePixelRatio || 1;
+        const dev = (canvas.width - Math.round(s.width * ratio)) / 2;
+        return Array.from(canvas.getContext('2d')!.getImageData(Math.round(x * ratio + dev), Math.round((s.height + 3) * ratio + dev), 1, 1).data);
+    };
+    const [tr, tg, tb, ta] = rgb(tint, 50, 0);
+    const [br, bg, bb] = rgb(e, 50, 0);
+    check('the default shadow colour is black', br === 0 && bg === 0 && bb === 0, `${br},${bg},${bb}`);
+    check('--elevation-color tints the shadow', ta > 8 && tr > 200 && tg < 40 && tb > 200, `${tr},${tg},${tb},${ta}`);
+    const full = alpha(tint, 50, 60 + 3);
+    tint.style.setProperty('--elevation-color', 'rgba(255, 0, 255, 0.5)');
+    await frames(3);
+    const half = alpha(tint, 50, 60 + 3);
+    check('the alpha of --elevation-color scales the shadow', half > 0 && Math.abs(half - full / 2) <= 6, `${full} -> ${half}`);
+    const colorRepaints = repaints;
+    tint.style.setProperty('--elevation-color', 'rgb(0, 255, 255)');
+    await frames(3);
+    check('a new colour repaints the shadow', repaints > colorRepaints, `repaints ${repaints - colorRepaints}`);
+    tint.style.removeProperty('--elevation-color');
     e.style.removeProperty('--ax-tilt-mode');
     e.style.removeProperty('--ax-corner-shape');
     e.style.removeProperty('--ax-radius');
